@@ -155,6 +155,51 @@ function sendAppLogin(res, error = '') {
 </html>`);
 }
 
+function importSessionPage(error = null, success = null) {
+    return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Import Rebel777 Session</title>
+  <style>
+    body{margin:0;min-height:100vh;background:#090d13;color:#e7eef8;font-family:Inter,system-ui,Arial,sans-serif;padding:20px;box-sizing:border-box}
+    .box{max-width:600px;margin:30px auto;background:#111823;border:1px solid #283548;border-radius:8px;padding:28px}
+    h1{margin:0 0 6px;font-size:20px;font-weight:700;color:#e7eef8}
+    .sub{color:#92a2b8;font-size:13px;margin-bottom:20px;line-height:1.5}
+    .steps{background:#0b1119;border:1px solid #1e2d42;border-radius:6px;padding:16px;margin-bottom:20px;font-size:13px;line-height:2;color:#92a2b8}
+    .steps b{color:#e7eef8}
+    .steps a{color:#56a6ff}
+    textarea{box-sizing:border-box;width:100%;border:1px solid #314056;background:#0b1119;color:#e7eef8;border-radius:6px;padding:12px;font-size:12px;font-family:monospace;height:160px;outline:none;resize:vertical}
+    textarea:focus{border-color:#56a6ff}
+    button{width:100%;margin-top:14px;border:0;border-radius:6px;padding:12px 14px;background:#19b979;color:#04110b;font-weight:800;font-size:15px;cursor:pointer}
+    .err{margin:0 0 14px;color:#ff7a7a;font-size:13px;background:rgba(255,100,100,.08);padding:10px;border-radius:4px}
+    .ok{margin:0 0 14px;color:#00d47e;font-size:14px;background:rgba(0,212,126,.08);padding:12px;border-radius:4px}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Import Rebel777 Session</h1>
+    <p class="sub">Since rebel777 uses Cloudflare protection, log in manually in your browser and paste the cookies here.</p>
+    <div class="steps">
+      <b>Steps:</b><br>
+      1. Open <a href="https://rebel777.co" target="_blank">rebel777.co</a> in Chrome on your phone or computer<br>
+      2. Log in normally<br>
+      3. Install the <a href="https://chrome.google.com/webstore/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm" target="_blank"><b>Cookie-Editor</b></a> Chrome extension<br>
+      4. Click the extension icon → click <b>Export</b> (top right) → copies JSON to clipboard<br>
+      5. Paste the JSON below and click Import
+    </div>
+    ${error ? `<p class="err">${error}</p>` : ''}
+    ${success ? `<p class="ok">${success}</p>` : ''}
+    <form method="post" action="/import-session">
+      <textarea name="cookies" placeholder='[{"name":"session","value":"abc123","domain":".rebel777.co",...}]' ${success ? '' : 'autofocus'}></textarea>
+      <button type="submit">Import Session</button>
+    </form>
+  </div>
+</body>
+</html>`;
+}
+
 function readBody(req) {
     return new Promise((resolve, reject) => {
         let body = '';
@@ -1305,7 +1350,8 @@ const server = http.createServer((req, res) => {
     }
 
     const isAdminPath = parsed.pathname === '/admin/refresh-session' || parsed.pathname === '/admin/login-debug'
-        || parsed.pathname === '/debug-screenshot' || parsed.pathname === '/debug-html';
+        || parsed.pathname === '/debug-screenshot' || parsed.pathname === '/debug-html'
+        || parsed.pathname === '/import-session';
     if (!isAppAuthed(req) && !isAdminPath) {
         if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
             res.writeHead(302, { Location: '/login', 'Cache-Control': 'no-store' });
@@ -1325,6 +1371,56 @@ const server = http.createServer((req, res) => {
     // ── /save-session — save cookies after manual login ──
     if (parsed.pathname === '/save-session') {
         saveSessionAndClose(res).catch(e => { log('SAVE-ERR', e.message); res.writeHead(500); res.end(e.message); });
+        return;
+    }
+
+    // ── /import-session — paste cookies from browser to create session (bypasses Cloudflare) ──
+    if (parsed.pathname === '/import-session') {
+        if (req.method === 'POST') {
+            try {
+                const body = await readBody(req);
+                const params = new URLSearchParams(body);
+                const raw = params.get('cookies') || body;
+                let parsed_cookies;
+                try { parsed_cookies = JSON.parse(raw); } catch {
+                    res.writeHead(400, { 'Content-Type': 'text/html' });
+                    res.end(importSessionPage('Invalid JSON — please paste valid cookie JSON.'));
+                    return;
+                }
+                // Accept both array of cookies (Cookie-Editor format) and Playwright storageState format
+                let cookieArray = Array.isArray(parsed_cookies)
+                    ? parsed_cookies
+                    : (Array.isArray(parsed_cookies.cookies) ? parsed_cookies.cookies : null);
+                if (!cookieArray || !cookieArray.length) {
+                    res.writeHead(400, { 'Content-Type': 'text/html' });
+                    res.end(importSessionPage('No cookies found in the pasted data.'));
+                    return;
+                }
+                // Normalize to Playwright cookie format
+                const normalized = cookieArray.map(c => ({
+                    name: c.name,
+                    value: c.value,
+                    domain: c.domain || '.rebel777.co',
+                    path: c.path || '/',
+                    expires: c.expirationDate || c.expires || -1,
+                    httpOnly: c.httpOnly || false,
+                    secure: c.secure || false,
+                    sameSite: c.sameSite || 'Lax',
+                }));
+                const session = { cookies: normalized, origins: [] };
+                fs.mkdirSync(path.dirname(SESSION_FILE), { recursive: true });
+                fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
+                log('IMPORT-SESSION', `Saved ${normalized.length} cookies from manual import`);
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                res.end(importSessionPage(null, `✓ Session saved! ${normalized.length} cookies imported. <a href="/" style="color:#00d47e">Go to app →</a>`));
+            } catch (e) {
+                res.writeHead(500, { 'Content-Type': 'text/html' });
+                res.end(importSessionPage(`Error: ${e.message}`));
+            }
+            return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(importSessionPage());
         return;
     }
 
