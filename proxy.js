@@ -299,27 +299,46 @@ async function findLoginInputs(pg) {
 }
 
 async function openLoginForm(pg) {
-    await pg.goto(`${LOGIN_ORIGIN}/login`, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
-    await pg.waitForTimeout(2500);
-    await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
+    // Always start from homepage — rebel777 uses a modal, not a /login page
+    await pg.goto(LOGIN_ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await pg.waitForTimeout(3000);
 
+    // If the password field is already visible (e.g. direct /login page), we're done
     if (await pg.locator('input[type="password"]:visible').count().catch(() => 0)) return;
 
-    await pg.goto(LOGIN_ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await pg.waitForTimeout(2500);
-    await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
-
-    await clickIfVisible(pg, [
-        'a:has-text("Login")',
+    // Click the Login button to open the modal — prefer header/nav buttons over footer links
+    const loginBtnSelectors = [
+        'header button:has-text("Login")',
+        'header a:has-text("Login")',
+        'nav button:has-text("Login")',
+        'nav a:has-text("Login")',
         'button:has-text("Login")',
-        'a:has-text("Log in")',
+        'a:has-text("Login")',
         'button:has-text("Log in")',
-        'a:has-text("Sign In")',
+        'a:has-text("Log in")',
         'button:has-text("Sign In")',
-        '[class*="login" i]',
-    ]);
-    await pg.waitForTimeout(2500);
-    await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
+        'a:has-text("Sign In")',
+        'button:has-text("SIGN IN")',
+        'button:has-text("LOG IN")',
+    ];
+    const clicked = await clickIfVisible(pg, loginBtnSelectors);
+    if (!clicked) {
+        log('LOGIN', 'Could not find Login button — saving debug HTML');
+        await saveLoginDebug(pg, 'login-button-not-found');
+        throw new Error('Login button not found on homepage. Check auto-login-debug.html for the page state.');
+    }
+
+    // Wait for the modal to appear with the password field
+    try {
+        await pg.locator('input[type="password"]').first().waitFor({ state: 'visible', timeout: 10000 });
+        log('LOGIN', 'Login modal appeared');
+    } catch {
+        // Modal did not appear — try clicking Login button once more
+        log('LOGIN', 'Modal did not appear after first click — retrying');
+        await pg.waitForTimeout(1000);
+        await clickIfVisible(pg, loginBtnSelectors);
+        await pg.locator('input[type="password"]').first().waitFor({ state: 'visible', timeout: 8000 });
+    }
 }
 
 async function autoRefreshSession() {
@@ -357,23 +376,56 @@ async function autoRefreshSession() {
         try {
             await openLoginForm(pg);
             const inputs = await findLoginInputs(pg);
-            await inputs.username.fill(REBEL777_USERNAME);
-            await inputs.password.fill(REBEL777_PASSWORD);
 
-            await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
-            const submit = await firstVisible(pg, SUBMIT_SELECTORS).catch(() => null);
+            // Type credentials with a small human-like delay
+            await inputs.username.click();
+            await pg.waitForTimeout(300);
+            await inputs.username.fill(REBEL777_USERNAME);
+            await pg.waitForTimeout(400);
+            await inputs.password.click();
+            await pg.waitForTimeout(300);
+            await inputs.password.fill(REBEL777_PASSWORD);
+            await pg.waitForTimeout(500);
+
+            log('AUTO-LOGIN', 'Credentials entered — looking for Login button in modal');
+
+            // Look for the submit/login button inside the modal first, then fall back to generic
+            const modalSubmitSelectors = [
+                '.modal button:has-text("Login")',
+                '.modal button:has-text("Log in")',
+                '.modal button:has-text("Sign In")',
+                '.modal button[type="submit"]',
+                '.modal input[type="submit"]',
+                '[role="dialog"] button:has-text("Login")',
+                '[role="dialog"] button:has-text("Log in")',
+                '[role="dialog"] button:has-text("Sign In")',
+                '[role="dialog"] button[type="submit"]',
+                '.popup button:has-text("Login")',
+                '.popup button[type="submit"]',
+                ...SUBMIT_SELECTORS,
+            ];
+
+            const submit = await firstVisible(pg, modalSubmitSelectors).catch(() => null);
             if (submit) {
-                await Promise.all([
-                    pg.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => { }),
-                    submit.click(),
-                ]);
+                log('AUTO-LOGIN', 'Clicking Login button in modal');
+                await submit.click();
             } else {
+                log('AUTO-LOGIN', 'Submit button not found — pressing Enter on password field');
                 await inputs.password.press('Enter');
-                await pg.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => { });
             }
 
-            await pg.waitForTimeout(5000);
+            // Wait for login to complete — URL change or networkidle, whichever comes first
+            await Promise.race([
+                pg.waitForURL(url => !url.includes('/login'), { timeout: 20000 }).catch(() => {}),
+                pg.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {}),
+            ]);
+
+            await pg.waitForTimeout(4000);
+
+            // Dismiss any post-login banner/popup
             await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
+            await pg.waitForTimeout(1000);
+
             await saveSession(ctx);
         } catch (e) {
             await saveLoginDebug(pg, e.message);
