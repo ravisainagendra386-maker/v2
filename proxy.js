@@ -32,6 +32,7 @@ const APP_PASSWORD = process.env.APP_PASSWORD || 'Ravi386';
 const APP_COOKIE_NAME = 'decimal_app_auth';
 const APP_COOKIE_VALUE = Buffer.from(`${APP_USERNAME}:${APP_PASSWORD}`).toString('base64url');
 const RESTART_EVERY_HOURS = Number(process.env.RESTART_EVERY_HOURS || 4);
+const LOGIN_DEBUG_FILE = process.env.LOGIN_DEBUG_FILE || path.join(path.dirname(SESSION_FILE), 'auto-login-debug.html');
 
 const USERNAME_SELECTORS = (process.env.REBEL777_USERNAME_SELECTOR || [
     'input[name="username"]',
@@ -51,6 +52,7 @@ const PASSWORD_SELECTORS = (process.env.REBEL777_PASSWORD_SELECTOR || [
 const SUBMIT_SELECTORS = (process.env.REBEL777_SUBMIT_SELECTOR || [
     'button[type="submit"]',
     'input[type="submit"]',
+    'button:has-text("Sign In")',
     'button:has-text("Login")',
     'button:has-text("Log in")',
     'button:has-text("Sign in")',
@@ -247,7 +249,7 @@ async function firstVisible(pg, selectors, timeout = 12000) {
             }
         }
     }
-    throw lastError || new Error(`No visible selector found: ${selectors.join(', ')}`);
+    throw new Error(`No visible selector found: ${selectors.join(', ')}${lastError ? ` (${lastError.message})` : ''}`);
 }
 
 async function clickIfVisible(pg, selectors) {
@@ -261,6 +263,63 @@ async function clickIfVisible(pg, selectors) {
         } catch { }
     }
     return false;
+}
+
+async function saveLoginDebug(pg, reason) {
+    try {
+        fs.mkdirSync(path.dirname(LOGIN_DEBUG_FILE), { recursive: true });
+        const html = await pg.content();
+        fs.writeFileSync(LOGIN_DEBUG_FILE, `<!-- ${new Date().toISOString()} ${reason} URL=${pg.url()} -->\n${html}`);
+        log('AUTO-LOGIN', `Saved debug HTML to ${LOGIN_DEBUG_FILE}`);
+    } catch (e) {
+        log('AUTO-LOGIN-DEBUG-ERR', e.message);
+    }
+}
+
+async function findLoginInputs(pg) {
+    const username = await firstVisible(pg, USERNAME_SELECTORS).catch(() => null);
+    const password = await firstVisible(pg, PASSWORD_SELECTORS).catch(() => null);
+    if (username && password) return { username, password };
+
+    const inputs = await pg.locator('input:visible').all();
+    let visiblePassword = password;
+    let visibleUsername = username;
+    for (const input of inputs) {
+        const type = ((await input.getAttribute('type').catch(() => '')) || '').toLowerCase();
+        if (!visiblePassword && type === 'password') {
+            visiblePassword = input;
+        } else if (!visibleUsername && ['text', 'email', 'tel', 'number', ''].includes(type)) {
+            visibleUsername = input;
+        }
+    }
+    if (!visibleUsername || !visiblePassword) {
+        throw new Error(`Could not find login inputs. Visible input count: ${inputs.length}`);
+    }
+    return { username: visibleUsername, password: visiblePassword };
+}
+
+async function openLoginForm(pg) {
+    await pg.goto(`${LOGIN_ORIGIN}/login`, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
+    await pg.waitForTimeout(2500);
+    await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
+
+    if (await pg.locator('input[type="password"]:visible').count().catch(() => 0)) return;
+
+    await pg.goto(LOGIN_ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await pg.waitForTimeout(2500);
+    await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
+
+    await clickIfVisible(pg, [
+        'a:has-text("Login")',
+        'button:has-text("Login")',
+        'a:has-text("Log in")',
+        'button:has-text("Log in")',
+        'a:has-text("Sign In")',
+        'button:has-text("Sign In")',
+        '[class*="login" i]',
+    ]);
+    await pg.waitForTimeout(2500);
+    await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
 }
 
 async function autoRefreshSession() {
@@ -295,25 +354,31 @@ async function autoRefreshSession() {
         });
 
         const pg = ctx.pages()[0] || await ctx.newPage();
-        await pg.goto(LOGIN_ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
+        try {
+            await openLoginForm(pg);
+            const inputs = await findLoginInputs(pg);
+            await inputs.username.fill(REBEL777_USERNAME);
+            await inputs.password.fill(REBEL777_PASSWORD);
 
-        const userInput = await firstVisible(pg, USERNAME_SELECTORS);
-        await userInput.fill(REBEL777_USERNAME);
+            await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
+            const submit = await firstVisible(pg, SUBMIT_SELECTORS).catch(() => null);
+            if (submit) {
+                await Promise.all([
+                    pg.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => { }),
+                    submit.click(),
+                ]);
+            } else {
+                await inputs.password.press('Enter');
+                await pg.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => { });
+            }
 
-        const passInput = await firstVisible(pg, PASSWORD_SELECTORS);
-        await passInput.fill(REBEL777_PASSWORD);
-
-        await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
-        const submit = await firstVisible(pg, SUBMIT_SELECTORS);
-        await Promise.all([
-            pg.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => { }),
-            submit.click(),
-        ]);
-
-        await pg.waitForTimeout(5000);
-        await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
-        await saveSession(ctx);
+            await pg.waitForTimeout(5000);
+            await clickIfVisible(pg, BANNER_CLOSE_SELECTORS);
+            await saveSession(ctx);
+        } catch (e) {
+            await saveLoginDebug(pg, e.message);
+            throw e;
+        }
 
         return {
             ok: true,
@@ -1077,7 +1142,8 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    if (!isAppAuthed(req) && parsed.pathname !== '/admin/refresh-session') {
+    const isAdminPath = parsed.pathname === '/admin/refresh-session' || parsed.pathname === '/admin/login-debug';
+    if (!isAppAuthed(req) && !isAdminPath) {
         if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
             res.writeHead(302, { Location: '/login', 'Cache-Control': 'no-store' });
             res.end();
@@ -1119,6 +1185,22 @@ const server = http.createServer((req, res) => {
     }
 
     // ── /session-status — check if session exists ──
+    if (parsed.pathname === '/admin/login-debug') {
+        if (!isAuthorized(parsed)) {
+            res.writeHead(401, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
+            res.end('Unauthorized');
+            return;
+        }
+        if (!fs.existsSync(LOGIN_DEBUG_FILE)) {
+            res.writeHead(404, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
+            res.end(`No debug file yet: ${LOGIN_DEBUG_FILE}`);
+            return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(fs.readFileSync(LOGIN_DEBUG_FILE, 'utf8'));
+        return;
+    }
+
     if (parsed.pathname === '/session-status') {
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(JSON.stringify({ hasSession: hasSession(), file: SESSION_FILE }));
