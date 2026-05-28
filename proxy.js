@@ -339,16 +339,53 @@ async function saveScreenshot(pg, label) {
     }
 }
 
+// Wait for Cloudflare "Under Attack Mode" / JS challenge to auto-complete
+async function waitForCloudflare(pg) {
+    let isCf = false;
+    try {
+        const title = await pg.title();
+        isCf = /just a moment|checking your browser|under attack|attention required|cloudflare/i.test(title);
+    } catch { }
+
+    if (!isCf) {
+        try {
+            const content = await pg.content();
+            isCf = /cf-challenge|cf_clearance|__cf_chl|checking.*browser|under.*attack/i.test(content);
+        } catch { }
+    }
+
+    if (isCf) {
+        log('CF', 'Cloudflare challenge detected — waiting up to 35s for it to auto-pass...');
+        try {
+            await pg.waitForFunction(() =>
+                !document.title.toLowerCase().includes('just a moment') &&
+                !document.title.toLowerCase().includes('checking') &&
+                !document.title.toLowerCase().includes('under attack') &&
+                !document.getElementById('cf-please-wait') &&
+                !document.querySelector('[id*="cf-challenge"]'),
+                { timeout: 35000, polling: 1500 }
+            );
+            await pg.waitForLoadState('networkidle', { timeout: 12000 }).catch(() => { });
+            await pg.waitForTimeout(2000);
+            log('CF', 'Cloudflare challenge passed ✓');
+        } catch {
+            log('CF', 'Cloudflare challenge did not auto-resolve — saving screenshot and continuing anyway');
+            await saveScreenshot(pg, 'cloudflare-stuck');
+        }
+    }
+}
+
 async function openLoginForm(pg) {
     // Always start from homepage — rebel777 uses a modal, not a /login page
     await pg.goto(LOGIN_ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await pg.waitForTimeout(4000);
+    await pg.waitForTimeout(3000);
+
+    // Handle Cloudflare "Under Attack Mode" challenge before anything else
+    await waitForCloudflare(pg);
 
     // Dismiss any pre-login overlays (cookie consent, age check, promo banners)
-    // that could be covering the Login button
     await clickIfVisible(pg, PRE_LOGIN_OVERLAY_SELECTORS);
     await pg.waitForTimeout(1000);
-    // Try once more in case a second overlay appeared
     await clickIfVisible(pg, PRE_LOGIN_OVERLAY_SELECTORS);
     await pg.waitForTimeout(500);
 
@@ -422,13 +459,27 @@ async function autoRefreshSession() {
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-blink-features=AutomationControlled',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--flag-switches-begin',
+            '--flag-switches-end',
         ],
         ignoreDefaultArgs: ['--enable-automation'],
     });
 
     try {
         await ctx.addInitScript(() => {
+            // Patch webdriver flag
             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            // Patch plugins to look like a real browser
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            // Patch languages
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-IN', 'en-US', 'en'] });
+            // Remove automation-related chrome runtime properties
+            if (window.chrome) {
+                window.chrome.runtime = window.chrome.runtime || {};
+            } else {
+                window.chrome = { runtime: {} };
+            }
         });
 
         const pg = ctx.pages()[0] || await ctx.newPage();
