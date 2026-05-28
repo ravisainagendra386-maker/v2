@@ -1359,6 +1359,32 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    // ── /debug-screenshot?name=before-login-click ──
+    if (parsed.pathname === '/debug-screenshot') {
+        const name = parsed.searchParams.get('name') || 'before-login-click';
+        const imgPath = path.join(path.dirname(LOGIN_DEBUG_FILE), `${name}.png`);
+        if (fs.existsSync(imgPath)) {
+            res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+            fs.createReadStream(imgPath).pipe(res);
+        } else {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end(`Screenshot not found: ${imgPath}. Available names: before-login-click, login-button-not-found`);
+        }
+        return;
+    }
+
+    // ── /debug-html ──
+    if (parsed.pathname === '/debug-html') {
+        if (fs.existsSync(LOGIN_DEBUG_FILE)) {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+            fs.createReadStream(LOGIN_DEBUG_FILE).pipe(res);
+        } else {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Debug HTML not found — login failure has not occurred yet.');
+        }
+        return;
+    }
+
     // ── /poly-fetch?url=... — uses headless Chrome TLS fingerprint to bypass Cloudflare ──
     if (parsed.pathname === '/poly-fetch') {
         const target = parsed.searchParams.get('url');
