@@ -301,10 +301,56 @@ async function findLoginInputs(pg) {
     return { username: visibleUsername, password: visiblePassword };
 }
 
+// Selectors for overlays that appear BEFORE login (cookie consent, age check, promo banners)
+const PRE_LOGIN_OVERLAY_SELECTORS = [
+    // Cookie / consent
+    'button:has-text("Accept")',
+    'button:has-text("Accept All")',
+    'button:has-text("I Accept")',
+    'button:has-text("Agree")',
+    'button:has-text("OK")',
+    'button:has-text("Got it")',
+    // Age verification
+    'button:has-text("I am 18")',
+    'button:has-text("Yes, I am")',
+    'button:has-text("Enter")',
+    // Generic close/dismiss
+    '[aria-label*="close" i]',
+    '[aria-label*="dismiss" i]',
+    '.close',
+    '.btn-close',
+    'button:has-text("×")',
+    'button:has-text("✕")',
+    // Promo/welcome modal close
+    'div.close-home-modal',
+    '.modal-close',
+    '.popup-close',
+    '[class*="close" i][class*="modal" i]',
+    '[class*="close" i][class*="popup" i]',
+];
+
+async function saveScreenshot(pg, label) {
+    try {
+        const screenshotPath = path.join(path.dirname(LOGIN_DEBUG_FILE), `${label}.png`);
+        await pg.screenshot({ path: screenshotPath, fullPage: false });
+        log('DEBUG', `Screenshot saved → ${screenshotPath}`);
+    } catch (e) {
+        log('DEBUG', `Screenshot failed: ${e.message}`);
+    }
+}
+
 async function openLoginForm(pg) {
     // Always start from homepage — rebel777 uses a modal, not a /login page
     await pg.goto(LOGIN_ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await pg.waitForTimeout(3000);
+    await pg.waitForTimeout(4000);
+
+    // Dismiss any pre-login overlays (cookie consent, age check, promo banners)
+    // that could be covering the Login button
+    await clickIfVisible(pg, PRE_LOGIN_OVERLAY_SELECTORS);
+    await pg.waitForTimeout(1000);
+    // Try once more in case a second overlay appeared
+    await clickIfVisible(pg, PRE_LOGIN_OVERLAY_SELECTORS);
+    await pg.waitForTimeout(500);
 
     // If the password field is already visible (e.g. direct /login page), we're done
     if (await pg.locator('input[type="password"]:visible').count().catch(() => 0)) return;
@@ -323,12 +369,21 @@ async function openLoginForm(pg) {
         'a:has-text("Sign In")',
         'button:has-text("SIGN IN")',
         'button:has-text("LOG IN")',
+        'button:has-text("LOGIN")',
+        '[class*="login-btn" i]',
+        '[class*="loginBtn" i]',
+        '[class*="sign-in" i]',
+        '[href*="/login" i]',
     ];
+
+    await saveScreenshot(pg, 'before-login-click');
+
     const clicked = await clickIfVisible(pg, loginBtnSelectors);
     if (!clicked) {
-        log('LOGIN', 'Could not find Login button — saving debug HTML');
+        log('LOGIN', 'Could not find Login button — saving debug HTML + screenshot');
         await saveLoginDebug(pg, 'login-button-not-found');
-        throw new Error('Login button not found on homepage. Check auto-login-debug.html for the page state.');
+        await saveScreenshot(pg, 'login-button-not-found');
+        throw new Error('Login button not found on homepage. Check auto-login-debug.html and before-login-click.png for the page state.');
     }
 
     // Wait for the modal to appear with the password field
@@ -336,8 +391,9 @@ async function openLoginForm(pg) {
         await pg.locator('input[type="password"]').first().waitFor({ state: 'visible', timeout: 10000 });
         log('LOGIN', 'Login modal appeared');
     } catch {
-        // Modal did not appear — try clicking Login button once more
-        log('LOGIN', 'Modal did not appear after first click — retrying');
+        // Modal did not appear — dismiss any overlay and try once more
+        log('LOGIN', 'Modal did not appear after first click — dismissing overlays and retrying');
+        await clickIfVisible(pg, PRE_LOGIN_OVERLAY_SELECTORS);
         await pg.waitForTimeout(1000);
         await clickIfVisible(pg, loginBtnSelectors);
         await pg.locator('input[type="password"]').first().waitFor({ state: 'visible', timeout: 8000 });
