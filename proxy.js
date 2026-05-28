@@ -17,6 +17,9 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = Number(process.env.PORT || 3000);
+const PUBLIC_URL = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : (process.env.PUBLIC_URL || `http://localhost:${PORT}`);
 let SCRAPE_INTERVAL = 500;
 const RENDER_WAIT_MS = 20000;
 const SESSION_FILE = process.env.SESSION_FILE || path.join(__dirname, 'rebel777-session.json');
@@ -713,7 +716,7 @@ async function doPoll() {
             }
 
             if (snap.isLoginPage) {
-                broadcast({ type: 'error', msg: '⚠️ Session expired — visit http://localhost:3000/login to re-authenticate' });
+                broadcast({ type: 'error', msg: `⚠️ Session expired — visit ${PUBLIC_URL}/login to re-authenticate` });
                 // Clear saved session so next start triggers fresh login
                 if (hasSession()) { fs.unlinkSync(SESSION_FILE); log('SESSION', 'Expired session deleted'); }
             } else {
@@ -744,7 +747,7 @@ async function doPoll() {
 async function startBrowser(targetUrl) {
     // Check session first
     if (!hasSession()) {
-        broadcast({ type: 'error', msg: '⚠️ No session found. Visit http://localhost:3000/login to log in first.' });
+        broadcast({ type: 'error', msg: `⚠️ No session found. Visit ${PUBLIC_URL}/login to log in first.` });
         log('SESSION', 'No rebel777-session.json — login required');
         return;
     }
@@ -1347,7 +1350,7 @@ wss.on('connection', (ws, req) => {
 
     // Tell client immediately if session is missing
     if (!hasSession()) {
-        ws.send(JSON.stringify({ type: 'error', msg: '⚠️ No session — visit http://localhost:3000/login first' }));
+        ws.send(JSON.stringify({ type: 'error', msg: `⚠️ No session — visit ${PUBLIC_URL}/login first` }));
     } else if (lastOdds) {
         ws.send(JSON.stringify({ type: 'odds', data: { runners: lastOdds, _source: 'rebel777', _ts: Date.now() } }));
     } else {
@@ -1378,17 +1381,17 @@ server.listen(PORT, '0.0.0.0', () => {
 ╔══════════════════════════════════════════════════════════════╗
 ║   IPL Arb Proxy v4  —  Session-Persistent Edition            ║
 ╠══════════════════════════════════════════════════════════════╣
-║  UI:            http://localhost:${PORT}                        ║
-║  Login:         http://localhost:${PORT}/login                  ║
-║  Save session:  http://localhost:${PORT}/save-session           ║
-║  Debug:         http://localhost:${PORT}/debug                  ║
+║  UI:            ${PUBLIC_URL}
+║  Login:         ${PUBLIC_URL}/login
+║  Save session:  ${PUBLIC_URL}/save-session
+║  Debug:         ${PUBLIC_URL}/debug
 ╠══════════════════════════════════════════════════════════════╣
 ║  ${sessionStatus.padEnd(58)}║
 ╚══════════════════════════════════════════════════════════════╝
 `);
 
     if (!hasSession()) {
-        console.log('  👉 First time setup: open http://localhost:3000/login in your browser\n');
+        console.log(`  👉 First time setup: open ${PUBLIC_URL}/login in your browser\n`);
     }
 });
 
