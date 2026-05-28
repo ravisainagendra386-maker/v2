@@ -1253,7 +1253,8 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    const isAdminPath = parsed.pathname === '/admin/refresh-session' || parsed.pathname === '/admin/login-debug';
+    const isAdminPath = parsed.pathname === '/admin/refresh-session' || parsed.pathname === '/admin/login-debug'
+        || parsed.pathname === '/debug-screenshot' || parsed.pathname === '/debug-html';
     if (!isAppAuthed(req) && !isAdminPath) {
         if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
             res.writeHead(302, { Location: '/login', 'Cache-Control': 'no-store' });
