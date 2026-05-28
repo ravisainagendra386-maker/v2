@@ -1359,7 +1359,7 @@ function proxyFetch(targetUrl, res) {
 // ─────────────────────────────────────────────────────────
 // HTTP SERVER
 // ─────────────────────────────────────────────────────────
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
     const parsed = new URL(req.url, `http://${req.headers.host}`);
 
     if (req.method === 'OPTIONS') {
