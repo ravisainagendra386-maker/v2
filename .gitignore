@@ -1,0 +1,9 @@
+node_modules/
+
+# Runtime browser/session data. Keep these on the server disk or in secrets,
+# not in source control.
+rebel777-profile/
+rebel777-session.json
+debug-page.html
+
+.env

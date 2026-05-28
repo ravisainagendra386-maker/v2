@@ -1,0 +1,9 @@
+node_modules/
+.git/
+.env
+
+rebel777-profile/
+rebel777-session.json
+debug-page.html
+
+npm-debug.log*
