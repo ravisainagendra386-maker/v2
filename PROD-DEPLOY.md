@@ -19,6 +19,7 @@ REBEL777_PASSWORD=your-rebel-password
 AUTO_REFRESH_SESSION_ON_START=true
 APP_USERNAME=Ravi
 APP_PASSWORD=Ravi386
+RESTART_EVERY_HOURS=4
 ```
 
 The public URL should point to the Node server itself. Open:
@@ -120,6 +121,7 @@ ADMIN_TOKEN=make-a-long-random-secret
 AUTO_REFRESH_SESSION_ON_START=true
 APP_USERNAME=Ravi
 APP_PASSWORD=Ravi386
+RESTART_EVERY_HOURS=4
 SESSION_FILE=/data/rebel777-session.json
 USER_DATA_DIR=/data/rebel777-profile
 SCRAPE_HEADLESS=true

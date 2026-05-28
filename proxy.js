@@ -31,6 +31,7 @@ const APP_USERNAME = process.env.APP_USERNAME || 'Ravi';
 const APP_PASSWORD = process.env.APP_PASSWORD || 'Ravi386';
 const APP_COOKIE_NAME = 'decimal_app_auth';
 const APP_COOKIE_VALUE = Buffer.from(`${APP_USERNAME}:${APP_PASSWORD}`).toString('base64url');
+const RESTART_EVERY_HOURS = Number(process.env.RESTART_EVERY_HOURS || 4);
 
 const USERNAME_SELECTORS = (process.env.REBEL777_USERNAME_SELECTOR || [
     'input[name="username"]',
@@ -1262,6 +1263,14 @@ server.listen(PORT, '0.0.0.0', () => {
 // ─────────────────────────────────────────────────────────
 
 refreshSessionOnStartup();
+
+if (RESTART_EVERY_HOURS > 0) {
+    const restartMs = RESTART_EVERY_HOURS * 60 * 60 * 1000;
+    setTimeout(() => {
+        log('RESTART', `Scheduled restart after ${RESTART_EVERY_HOURS} hour(s)`);
+        process.exit(0);
+    }, restartMs);
+}
 
 //1. node proxy.js
 //2. Open http://localhost:3000/login  ← opens a VISIBLE Chromium window
