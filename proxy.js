@@ -156,6 +156,7 @@ function sendAppLogin(res, error = '') {
 }
 
 function importSessionPage(error = null, success = null) {
+    const bm = `javascript:(function(){var c=document.cookie;if(!c){alert('No cookies found — make sure you are logged in to rebel777.co');return;}fetch('${PUBLIC_URL}/import-session-bookmarklet',{method:'POST',mode:'cors',headers:{'Content-Type':'text/plain'},body:c}).then(function(r){return r.text()}).then(function(t){alert(t)}).catch(function(e){alert('Error: '+e)})})()`;
     return `<!doctype html>
 <html>
 <head>
@@ -163,38 +164,71 @@ function importSessionPage(error = null, success = null) {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Import Rebel777 Session</title>
   <style>
-    body{margin:0;min-height:100vh;background:#090d13;color:#e7eef8;font-family:Inter,system-ui,Arial,sans-serif;padding:20px;box-sizing:border-box}
-    .box{max-width:600px;margin:30px auto;background:#111823;border:1px solid #283548;border-radius:8px;padding:28px}
-    h1{margin:0 0 6px;font-size:20px;font-weight:700;color:#e7eef8}
-    .sub{color:#92a2b8;font-size:13px;margin-bottom:20px;line-height:1.5}
-    .steps{background:#0b1119;border:1px solid #1e2d42;border-radius:6px;padding:16px;margin-bottom:20px;font-size:13px;line-height:2;color:#92a2b8}
-    .steps b{color:#e7eef8}
-    .steps a{color:#56a6ff}
-    textarea{box-sizing:border-box;width:100%;border:1px solid #314056;background:#0b1119;color:#e7eef8;border-radius:6px;padding:12px;font-size:12px;font-family:monospace;height:160px;outline:none;resize:vertical}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:#090d13;color:#e7eef8;font-family:Inter,system-ui,Arial,sans-serif;padding:16px}
+    .box{max-width:560px;margin:16px auto}
+    h1{margin:0 0 4px;font-size:20px;font-weight:700}
+    .sub{color:#92a2b8;font-size:13px;margin:0 0 20px;line-height:1.6}
+    .card{background:#111823;border:1px solid #283548;border-radius:10px;padding:20px;margin-bottom:16px}
+    .badge{display:inline-block;background:#19b979;color:#04110b;font-size:10px;font-weight:800;padding:2px 7px;border-radius:20px;letter-spacing:.5px;margin-bottom:10px}
+    .badge.alt{background:#56a6ff;color:#000}
+    h2{margin:0 0 12px;font-size:15px;font-weight:700}
+    ol{margin:0;padding-left:20px;color:#92a2b8;font-size:13px;line-height:2.1}
+    ol b{color:#e7eef8}
+    ol a{color:#56a6ff;text-decoration:none}
+    .bm-link{display:block;word-break:break-all;background:#0b1119;border:1px solid #314056;border-radius:6px;padding:10px;font-size:11px;font-family:monospace;color:#92a2b8;margin:10px 0;max-height:70px;overflow:auto}
+    .copy-btn{width:100%;border:1px solid #314056;background:#0b1119;color:#e7eef8;border-radius:6px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px}
+    .copy-btn:active{background:#1e2d42}
+    textarea{width:100%;border:1px solid #314056;background:#0b1119;color:#e7eef8;border-radius:6px;padding:12px;font-size:12px;font-family:monospace;height:130px;outline:none;resize:vertical;margin-top:4px}
     textarea:focus{border-color:#56a6ff}
-    button{width:100%;margin-top:14px;border:0;border-radius:6px;padding:12px 14px;background:#19b979;color:#04110b;font-weight:800;font-size:15px;cursor:pointer}
-    .err{margin:0 0 14px;color:#ff7a7a;font-size:13px;background:rgba(255,100,100,.08);padding:10px;border-radius:4px}
-    .ok{margin:0 0 14px;color:#00d47e;font-size:14px;background:rgba(0,212,126,.08);padding:12px;border-radius:4px}
+    .submit-btn{width:100%;margin-top:10px;border:0;border-radius:6px;padding:13px;background:#19b979;color:#04110b;font-weight:800;font-size:15px;cursor:pointer}
+    .err{color:#ff7a7a;font-size:13px;background:rgba(255,100,100,.08);padding:10px;border-radius:6px;margin-bottom:12px}
+    .ok{color:#00d47e;font-size:14px;background:rgba(0,212,126,.08);padding:12px;border-radius:6px;margin-bottom:12px}
+    .divider{text-align:center;color:#314056;font-size:12px;margin:4px 0 16px;position:relative}
+    .divider::before,.divider::after{content:'';display:inline-block;width:40%;height:1px;background:#1e2d42;vertical-align:middle;margin:0 8px}
   </style>
 </head>
 <body>
   <div class="box">
     <h1>Import Rebel777 Session</h1>
-    <p class="sub">Since rebel777 uses Cloudflare protection, log in manually in your browser and paste the cookies here.</p>
-    <div class="steps">
-      <b>Steps:</b><br>
-      1. Open <a href="https://rebel777.co" target="_blank">rebel777.co</a> in Chrome on your phone or computer<br>
-      2. Log in normally<br>
-      3. Install the <a href="https://chrome.google.com/webstore/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm" target="_blank"><b>Cookie-Editor</b></a> Chrome extension<br>
-      4. Click the extension icon → click <b>Export</b> (top right) → copies JSON to clipboard<br>
-      5. Paste the JSON below and click Import
-    </div>
+    <p class="sub">Rebel777 uses Cloudflare — auto-login is blocked. Log in on your phone browser and use one of the methods below to send your session here.</p>
+
     ${error ? `<p class="err">${error}</p>` : ''}
     ${success ? `<p class="ok">${success}</p>` : ''}
-    <form method="post" action="/import-session">
-      <textarea name="cookies" placeholder='[{"name":"session","value":"abc123","domain":".rebel777.co",...}]' ${success ? '' : 'autofocus'}></textarea>
-      <button type="submit">Import Session</button>
-    </form>
+
+    <!-- METHOD 1: Bookmarklet (mobile-friendly) -->
+    <div class="card">
+      <span class="badge">RECOMMENDED FOR MOBILE</span>
+      <h2>Method 1 — One-tap Bookmarklet</h2>
+      <ol>
+        <li>Copy the code below</li>
+        <li>Open your browser <b>Bookmarks</b> → add a new bookmark with any name (e.g. <b>Send Session</b>)</li>
+        <li>Edit that bookmark and <b>replace its URL</b> with the copied code</li>
+        <li>Go to <a href="https://rebel777.co" target="_blank"><b>rebel777.co</b></a> and <b>log in</b></li>
+        <li>While on rebel777.co, tap your <b>Send Session</b> bookmark</li>
+        <li>You'll see an alert — done!</li>
+      </ol>
+      <div class="bm-link" id="bmcode">${bm.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+      <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('bmcode').innerText).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy Bookmarklet Code',1500)})">Copy Bookmarklet Code</button>
+    </div>
+
+    <div class="divider">OR</div>
+
+    <!-- METHOD 2: Manual paste (desktop) -->
+    <div class="card">
+      <span class="badge alt">DESKTOP</span>
+      <h2>Method 2 — Paste Cookies Manually</h2>
+      <ol>
+        <li>On desktop Chrome, go to <a href="https://rebel777.co" target="_blank"><b>rebel777.co</b></a> and log in</li>
+        <li>Install <a href="https://chrome.google.com/webstore/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm" target="_blank"><b>Cookie-Editor</b></a> extension</li>
+        <li>Click the extension → <b>Export</b> → pastes JSON to clipboard</li>
+        <li>Paste below and click Import</li>
+      </ol>
+      <form method="post" action="/import-session">
+        <textarea name="cookies" placeholder='[{"name":"cf_clearance","value":"...","domain":".rebel777.co",...}]'></textarea>
+        <button class="submit-btn" type="submit">Import Session</button>
+      </form>
+    </div>
   </div>
 </body>
 </html>`;
@@ -1351,7 +1385,8 @@ const server = http.createServer((req, res) => {
 
     const isAdminPath = parsed.pathname === '/admin/refresh-session' || parsed.pathname === '/admin/login-debug'
         || parsed.pathname === '/debug-screenshot' || parsed.pathname === '/debug-html'
-        || parsed.pathname === '/import-session';
+        || parsed.pathname === '/import-session'
+        || parsed.pathname === '/import-session-bookmarklet';
     if (!isAppAuthed(req) && !isAdminPath) {
         if (parsed.pathname === '/' || parsed.pathname === '/index.html') {
             res.writeHead(302, { Location: '/login', 'Cache-Control': 'no-store' });
@@ -1421,6 +1456,51 @@ const server = http.createServer((req, res) => {
         }
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(importSessionPage());
+        return;
+    }
+
+    // ── /import-session-bookmarklet — receives raw document.cookie from bookmarklet (CORS-open) ──
+    if (parsed.pathname === '/import-session-bookmarklet') {
+        const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Cache-Control': 'no-store' };
+        if (req.method === 'OPTIONS') { res.writeHead(204, cors); res.end(); return; }
+        if (req.method !== 'POST') { res.writeHead(405, cors); res.end('Method Not Allowed'); return; }
+        try {
+            const raw = await readBody(req);
+            // raw is document.cookie format: "name1=val1; name2=val2; ..."
+            if (!raw || !raw.trim()) {
+                res.writeHead(400, { ...cors, 'Content-Type': 'text/plain' });
+                res.end('No cookies received. Make sure you are logged in to rebel777.co first.');
+                return;
+            }
+            const cookies = raw.split(';').map(pair => {
+                const eq = pair.indexOf('=');
+                if (eq === -1) return null;
+                return {
+                    name: pair.slice(0, eq).trim(),
+                    value: pair.slice(eq + 1).trim(),
+                    domain: '.rebel777.co',
+                    path: '/',
+                    expires: -1,
+                    httpOnly: false,
+                    secure: true,
+                    sameSite: 'Lax',
+                };
+            }).filter(Boolean);
+            if (!cookies.length) {
+                res.writeHead(400, { ...cors, 'Content-Type': 'text/plain' });
+                res.end('Could not parse cookies. Try the manual paste method instead.');
+                return;
+            }
+            const session = { cookies, origins: [] };
+            fs.mkdirSync(path.dirname(SESSION_FILE), { recursive: true });
+            fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
+            log('IMPORT-BM', `Bookmarklet: saved ${cookies.length} cookies`);
+            res.writeHead(200, { ...cors, 'Content-Type': 'text/plain' });
+            res.end(`Session saved! ${cookies.length} cookies imported. You can now use the app.`);
+        } catch (e) {
+            res.writeHead(500, { ...cors, 'Content-Type': 'text/plain' });
+            res.end(`Error: ${e.message}`);
+        }
         return;
     }
 
